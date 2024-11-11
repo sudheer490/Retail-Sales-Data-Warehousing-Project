@@ -1,0 +1,165 @@
+-- Drop tables if they exist
+BEGIN
+    EXECUTE IMMEDIATE 'DROP TABLE sales_fact CASCADE CONSTRAINTS';
+    EXECUTE IMMEDIATE 'DROP TABLE date_dim CASCADE CONSTRAINTS';
+    EXECUTE IMMEDIATE 'DROP TABLE shops_dim CASCADE CONSTRAINTS';
+    EXECUTE IMMEDIATE 'DROP TABLE item_category_dim CASCADE CONSTRAINTS';
+    EXECUTE IMMEDIATE 'DROP TABLE item_dim CASCADE CONSTRAINTS';
+EXCEPTION
+    WHEN OTHERS THEN
+        NULL;  -- Ignore errors if tables do not exist
+END;
+/
+
+ 
+
+-- Create Shops Dimension
+CREATE TABLE shops_dim (
+    shop_id NUMBER PRIMARY KEY,
+    shop_name VARCHAR2(255)
+);
+ 
+
+CREATE TABLE item_dim (
+    item_id        NUMBER PRIMARY KEY,
+    item_name      VARCHAR2(255) NOT NULL,
+    category_name  VARCHAR2(255) NOT NULL
+);
+
+ 
+
+-- Populate shops_dim from shops_data
+INSERT INTO shops_dim (shop_id, shop_name)
+SELECT shop_id, shop_name FROM shops_data;
+
+select * from  item_categories_data;
+ 
+-- Populate item_dim from items_data and item_categories_data
+INSERT INTO item_dim (item_id, item_name, category_name)
+SELECT 
+    i.item_id, 
+    i.item_name, 
+    ic.item_category_name
+FROM 
+    items_data i
+    JOIN item_categories_data ic ON i.category_id = ic.item_category_id;
+
+ 
+CREATE TABLE DATE_DIM(
+    DATE_KEY                DATE PRIMARY KEY,
+    FULL_DATE_DESCRIPTION   VARCHAR2(50) NOT NULL,
+    DAY_OF_WEEK             NUMBER(1) NOT NULL,
+    DAY_OF_MONTH            CHAR(2) NOT NULL,
+    DAY_OF_YEAR             CHAR(3) NOT NULL,
+    LAST_DAY_OF_WEEK_INDICATOR CHAR(1) NOT NULL CHECK (LAST_DAY_OF_WEEK_INDICATOR IN ('Y', 'N')),
+    LAST_DAY_OF_MONTH_INDICATOR CHAR(1) NOT NULL CHECK (LAST_DAY_OF_MONTH_INDICATOR IN ('Y', 'N')),
+    WEEK_ENDING_DATE        DATE NOT NULL,
+    MONTH_NUMBER            CHAR(2) NOT NULL,
+    MONTH_NAME              VARCHAR2(20) NOT NULL,
+    YEAR_MONTH              VARCHAR2(15) NOT NULL,
+    QUARTER_NUMBER          CHAR(1) NOT NULL,
+    YEAR_QUARTER            VARCHAR2(7) NOT NULL,
+    YEAR_NUMBER             CHAR(4) NOT NULL
+);
+ 
+ 
+DECLARE
+    v_CURRENT_DATE            DATE;
+    v_END_DATE                DATE;
+    v_START_YEAR              CHAR(4) := '2013'; -- Example start year
+    v_END_YEAR                CHAR(4) := '2015'; -- Example end year
+BEGIN
+    -- Assign the start date and end date based on the provided years
+    v_CURRENT_DATE := TO_DATE('0101' || v_START_YEAR, 'MMDDYYYY');
+    v_END_DATE     := TO_DATE('1231' || v_END_YEAR,   'MMDDYYYY');
+    
+    -- Clear any existing data in the DATE_DIM table
+    DELETE FROM DATE_DIM;
+    
+    -- Loop through each date from v_CURRENT_DATE to v_END_DATE
+    WHILE v_CURRENT_DATE <= v_END_DATE LOOP
+        INSERT INTO DATE_DIM (
+            DATE_KEY,
+            FULL_DATE_DESCRIPTION,
+            DAY_OF_WEEK,
+            DAY_OF_MONTH,
+            DAY_OF_YEAR,
+            LAST_DAY_OF_WEEK_INDICATOR,
+            LAST_DAY_OF_MONTH_INDICATOR,
+            WEEK_ENDING_DATE,
+            MONTH_NUMBER,
+            MONTH_NAME,
+            YEAR_MONTH,
+            QUARTER_NUMBER,
+            YEAR_QUARTER,
+            YEAR_NUMBER
+        ) VALUES (
+            v_CURRENT_DATE,                                   -- DATE_KEY
+            TO_CHAR(v_CURRENT_DATE, 'Day, Month DD, YYYY'),   -- FULL_DATE_DESCRIPTION
+            TO_NUMBER(TO_CHAR(v_CURRENT_DATE, 'D')) - 1,     -- DAY_OF_WEEK (0=Sunday, 6=Saturday)
+            TO_CHAR(v_CURRENT_DATE, 'DD'),                    -- DAY_OF_MONTH
+            TO_CHAR(v_CURRENT_DATE, 'DDD'),                   -- DAY_OF_YEAR
+            CASE 
+                WHEN TO_CHAR(v_CURRENT_DATE, 'DY', 'NLS_DATE_LANGUAGE=AMERICAN') = 'SAT' THEN 'Y'
+                ELSE 'N'
+            END,                                              -- LAST_DAY_OF_WEEK_INDICATOR
+            CASE 
+                WHEN LAST_DAY(v_CURRENT_DATE) = v_CURRENT_DATE THEN 'Y'
+                ELSE 'N'
+            END,                                              -- LAST_DAY_OF_MONTH_INDICATOR
+            CASE 
+                WHEN TO_CHAR(v_CURRENT_DATE, 'DY', 'NLS_DATE_LANGUAGE=AMERICAN') = 'SAT' THEN v_CURRENT_DATE
+                ELSE NEXT_DAY(v_CURRENT_DATE, 'SATURDAY')
+            END,                                              -- WEEK_ENDING_DATE
+            TO_CHAR(v_CURRENT_DATE, 'MM'),                    -- MONTH_NUMBER
+            INITCAP(TO_CHAR(v_CURRENT_DATE, 'Month')),        -- MONTH_NAME
+            INITCAP(TO_CHAR(v_CURRENT_DATE, 'Month YYYY')),   -- YEAR_MONTH
+            TO_CHAR(v_CURRENT_DATE, 'Q'),                     -- QUARTER_NUMBER
+            TO_CHAR(v_CURRENT_DATE, 'YYYY') || ' Q' || TO_CHAR(v_CURRENT_DATE, 'Q'), -- YEAR_QUARTER
+            TO_CHAR(v_CURRENT_DATE, 'YYYY')                   -- YEAR_NUMBER
+        );
+        
+        -- Increment the current date by one day
+        v_CURRENT_DATE := v_CURRENT_DATE + 1;
+    END LOOP;
+    
+    -- Commit the transaction to save changes
+    COMMIT;
+END;
+/
+  -- Create Sales Fact Table
+ CREATE TABLE sales_fact (
+    transaction_id NUMBER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    date_key DATE NOT NULL,
+    shop_id NUMBER NOT NULL,
+    item_id NUMBER NOT NULL,
+    item_price NUMBER NOT NULL,
+    item_cnt_day NUMBER NOT NULL,
+    total_sales NUMBER NOT NULL,
+    FOREIGN KEY (date_key) REFERENCES DATE_DIM(DATE_KEY),
+    FOREIGN KEY (shop_id) REFERENCES shops_dim(shop_id),
+    FOREIGN KEY (item_id) REFERENCES item_dim(item_id)
+);
+
+
+-- Corrected Insert into Sales Fact Table
+INSERT INTO sales_fact (date_key, shop_id, item_id, item_price, item_cnt_day,total_sales)
+SELECT 
+    d.DATE_KEY,
+    s.shop_id,
+    i.item_id,
+    st.item_price,
+    st.item_cnt_day,
+    st.item_price * st.item_cnt_day AS "total_sales"
+FROM 
+    sales_transactions st
+JOIN 
+    DATE_DIM d ON st.transaction_date = d.DATE_KEY
+JOIN 
+    shops_dim s ON st.shop_id = s.shop_id
+JOIN 
+    item_dim i ON st.item_id = i.item_id;
+
+
+select count(*) from sales_transactions;
+select * from item_dim;
