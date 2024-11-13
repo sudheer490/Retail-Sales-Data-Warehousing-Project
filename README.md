@@ -1,4 +1,3 @@
-```markdown
 # Retail-Sales-Data-Warehousing-Project
 
 ## Data Warehouse and Analytical Queries Setup
@@ -82,4 +81,3 @@ Run each SQL script in sequence to build the database schema and views:
 ## Requirements
 
 Requires an SQL-compatible database like Oracle or PostgreSQL. Ensure necessary permissions for table creation and data manipulation.
-```
