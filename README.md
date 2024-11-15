@@ -4,7 +4,7 @@
 
 This project consists of three SQL scripts to set up a data warehouse schema, transform data, and define analytical queries. Each script is briefly explained below:
 
-### 1. `oltp_schema.sql`
+### 1. `create_schema.sql`
 Defines the Online Transaction Processing (OLTP) schema, setting up tables to store raw transactional data. This schema includes:
 - **shops_data**: Information about each shop, including location and type.
 - **item_categories_data**: Stores item category names.
